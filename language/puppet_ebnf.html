@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<body>
+/* Puppet Language version 6 - no normative - in WC3 EBNF.
+** Uses 🚫X.Y - for deprecated constructs where X.Y is version support was ended.
+** Uses 🚫 future - for future reserved / partially implemented constructs
+**
+** This EBNF grammar is not the complete specification of the language:
+** * operator precendence is not shown
+** * all semantics are not shown - an Expression may be required to evaluate to a particular value
+** * application orchestration features are not included
+** * difference between scripting/tasks support and catalog compilation is not shown
+** * EPP is only partially included because main grammar defines one construct
+*/
+PuppetProgram     ::= WhiteSpace? | Statements
+Statements        ::= (Statement ';'?)+
+Statement         ::= AssignmentOrHigher | StatementCall | Definition
+
+StatementCall ::= (  'require'|'realize'|'include'|'contain'|'tag'
+                    |'debug'|'info'|'notice'|'warning'|'err'
+                    |'fail'
+                    |'break'|'next'|'return'
+                    | 'import «🚫4.0»'
+                    ) (Arguments | '(' Arguments? ')' )
+
+Arguments           ::= Argument (',' Argument)*
+Argument            ::= AssignmentOrHigher | HashPair
+
+AssignmentOrHigher         ::= RelationshipOrHigher | SingleAssignmentExpression | MultiAssignmentExpression
+SingleAssignmentExpression ::= Variable ('=' | '+= «🚫4.0»' | '-= «🚫4.0»' ) AssignmentOrHigher
+MultiAssignmentExpression  ::= '[' Variable (',' Variable)* ']' '=' AssignmentOrHigher
+
+
+RelationshipOrHigher      ::= ResourceOrHigher | RelationshipOrHigher ('->' | '<-' | '~>' | '<~' ) ResourceOrHigher
+ResourceOrHigher          ::= Expression
+                           | ResourceExpression
+                           | ResourceDefaultExpression
+                           | ClassExpression
+
+ResourceExpression        ::= ('@'|'@@')? Expression '{' ResourceBody (';' ResourceBody)* ';'? '}'
+ResourceBody              ::= (Expression | 'default') ':' AttributeOperations?
+ResourceDefaultExpression ::= Expression '{' AttributeOperations ';'? '}'
+ClassExpression           ::= 'class' '{' ResourceBody (';' ResourceBody)* ';'? '}'
+AttributeOperations       ::= (NAME | KEYWORD | '*') ('=>' | '+>') Expression (',' (NAME | KEYWORD | '*') ('=>' | '+>') Expression)* ','?
+
+Expression                ::= PrimaryExpression
+                            | Expression 'in'  Expression
+                            | Expression '=~'  Expression
+                            | Expression '!~'  Expression
+                            | Expression '+'   Expression
+                            | Expression '-'   Expression
+                            | Expression '/'   Expression
+                            | Expression '*'   Expression
+                            | Expression '%'   Expression
+                            | Expression '<<'  Expression
+                            | Expression '>>'  Expression
+                            |            '-'   Expression
+                            |            '*'   Expression
+                            | Expression '!='  Expression
+                            | Expression '=='  Expression
+                            | Expression '>'   Expression
+                            | Expression '>='  Expression
+                            | Expression '<'   Expression
+                            | Expression '<='  Expression
+                            |            '!'   Expression
+                            | Expression 'and' Expression
+                            | Expression 'or'  Expression
+                            | Expression '?'   SelectorEntries
+                            | '(' AssignmentOrHigher ')'
+
+
+PrimaryExpression ::=   PrimaryValue
+                      | IfExpression
+                      | UnlessExpression
+                      | CaseExpression
+                      | Variable
+                      | CollectionExpression
+                      | CallFunctionExpression
+                      | CallMethodExpression
+                      | ApplyExpression      /* mode: script */
+                      | BracketedExpression
+                      | EppRenderExpression  /* mode: epp */
+
+Definition           ::= NodeDefinition
+                       | FunctionDefinition
+                       | HostClassDefinition
+                       | ResourceTypeDefinition
+                       | TypeAliasDefinition
+                       | TypeDefinition
+                       | PlanDefinition       /* mode: script */
+
+BracketedExpression     ::= Expression '[' AccessArgs ','? ']'
+AccessArgs              ::= (Expression | HashPair) (',' (Expression | HashPair))*
+HashPair                ::= Expression '=>' Expression
+
+CallFunctionExpression  ::= (Expression | 'type') '(' (Arguments ','?)? ')' Lambda?
+ApplyExpression         ::= 'apply' '(' (Arguments ','?)? ')' '{' Statements? '}'
+CallMethodExpression    ::= Expression '.' (NAME | 'type') ('(' Arguments ','? ')')? Lambda?
+Lambda                  ::= '|' (Parameters ','?)? '|' ReturnType? '{' Statements '}'
+ReturnType              ::= '>>' TypeSpecification
+
+IfExpression           ::= 'if' Expression '{' Expressions '}' ('elsif' Expression '{' Expressions '}')* ('else' '{' Expressions '}')?
+UnlessExpression       ::= 'unless' Expression '{' Expressions '}' ('else' '{' Expressions '}')?
+CaseExpression         ::= 'case' Expression '{' (Expression (',' Expression)* ':' '{' Expressions '}')* '}'
+SelectorEntries        ::= (Expression '=>' Expression) | ('{' (Expression '=>' Expression (',' Expression '=>' Expression)* ','?)? '}')
+
+NodeDefinition         ::= 'node' HostMatch (',' HostMatch)* ','? ('inherits' HostMatch)? '{' Statements? '}'
+HostMatch              ::= ((NAME | Number) ('.' (NAME | Number))*) | 'default' | String | Regexp
+
+FunctionDefinition     ::= 'function' NAME ('(' ParameterList? ')')? ReturnType? '{' Statements? '}'
+HostClassDefinition    ::= 'class'    NAME ('(' ParameterList? ')')? Inherits? '{' Statements? '}'
+Inherits               ::= 'inherits' ClassNameOrDefault
+ResourceTypeDefinition ::= 'define'   NAME ('(' ParameterList? ')')? '{' Statements? '}'
+PlanDefinition         ::= 'plan'     NAME ('(' ParameterList? ')')? '{' Statements? '}'
+TypeAliasDefinition    ::= 'type' TYPENAME '=' (TYPENAME ('[' AccessArgs ','? ']' | Hash )? | Hash | Array)
+TypeDefinition         ::= 'type' TYPENAME ('inherits' TYPENAME)? '{' ReservedForFutureUse '}'
+TypeSpecification      ::= TYPENAME ('[' AccessArgs ','? ']')?
+
+ParameterList          ::= Parameter (',' Parameter)* ','?
+Parameter              ::= TypeSpecification? '*'? Variable ('=' Expression)?
+ReservedForFutureUse  ::= '«🚫 future reserved»'
+CollectionExpression  ::= Expression ('<<|' Expression? '|>>' | '<|' Expression? '|>') ('{' AttributeOperations? '}')?
+
+Variable          ::= '$' '_'* NAME
+PrimaryValue      ::= String 
+                    | Number
+                    | Regexp 
+                    | Boolean 
+                    | Undef 
+                    | Default 
+                    | NAME 
+                    | TYPENAME
+                    | Heredoc
+                    | Array
+                    | Hash
+
+Array             ::= '[' (Expression (',' Expression)* ','?)? ']'
+Hash              ::= '{' (Expression '=>' Expression (',' Expression '=>' Expression)* ','?)? '}'
+Number            ::= Float | Integer
+Float             ::= [0-9]+('.' [0-9]+)([eE][-]?[0-9]+)?
+Integer           ::= HexValue | OctalValue | DecimalValue
+HexValue          ::= [0][xX] HEX+
+HEX               ::= [0-9a-fA-F]
+OctalValue        ::= [0][0-7]+
+DecimalValue      ::= [1-9][0-9]*
+String            ::= SingleQuotedString | DoubleQuotedString
+SingleQuotedString::= "'"([^'\] | "\" ("'" | "\" | [^'\]))* "'"
+DoubleQuotedString::= ["] ([^$"\] | '\' (["'\rnts$] | 'u' UnicodeSpec | [^"'\rnts$u]) | '$' NAME | '${' Expression '}')* ["]
+UnicodeSpec       ::= (HEX HEX HEX HEX) | '{' HEX (HEX (HEX (HEX (HEX HEX?)?)?)?)? '}'
+Heredoc           ::= '@(' HeredocStart ')' NonHeredocTail? LineEnding HeredocBodyLines
+HeredocStart      ::= HeredocTag (':' Spaces* HeredocSyntax)? ('/' Spaces* HeredocEscapes)? Spaces*    /* ws: explicit */
+HeredocTag        ::= ['] [^#x0-#x1F:/)']+ ['] | ["] [^#x0-#x1F:/)"]+ ["] | [^#x0-#x1F:/)]+            /* ws: explicit */
+NonHeredocTail    ::= NotLineEnding+                                                                   /* ws: explicit */
+HeredocBodyLines  ::= HeredocBodyLine* HeredocEnd
+HeredocBodyLine   ::= NotLineEnding* LineEnding                                                        /* ws: explicit */
+NotLineEnding     ::= [^#xD#xA]
+HeredocEnd        ::= Spaces* ([|] Spaces*)? ([-] Spaces*)? HeredocTag LineEnding                      /* ws: explicit */
+HeredocSyntax     ::= [^)/#x0-#x1F]+
+HeredocEscapes    ::= [trnsuL$]+
+Boolean           ::= 'true' | 'false'
+Undef             ::= 'undef'
+Default           ::= 'default'
+Regexp            ::= '/' [^/#x0-#x1F]* '/'                                                            /* ws: explicit */
+NAME              ::= '::'? [a-z][a-zA-Z0-9_]* ('::' [a-z][a-zA-Z0-9_]*)*                              /* ws: explicit */
+TYPENAME          ::= '::'? [A-Z][a-zA-Z0-9_]* ('::' [A-Z][a-zA-Z0-9_]*)*                              /* ws: explicit */
+KEYWORD           ::= 'and' | 'or' | 'in'
+                    | 'node' | 'class' | 'define' | 'function'
+                    | 'if' | 'else' | 'elsif' | 'unless' | 'case'
+                    | 'type' | 'attr' | 'private' | 'inherits'
+                    | 'undef' | 'default'
+                    | 'consumes' | 'produces' | 'application' | 'site'
+
+OTHER_KEYWORD     ::= 'plan' | 'apply'
+  
+WhiteSpace        ::= (LineEnding | Spaces | Comments)+
+Comments          ::= (SingleLineComment | MultiLineComment)+
+SingleLineComment ::= '#' [^#xD#xA]* #xD? #xA                               /* ws: explicit */
+MultiLineComment  ::=  '/*' ( [^*] | '*'+ [^*/] )* '*'* '*/'                /* ws: explicit */
+LineEnding        ::= #xD? #xA                                              /* ws: explicit */
+Spaces            ::= (#x20 | #x9)+                                         /* ws: explicit */
+</body>
+</html>
